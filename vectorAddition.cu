@@ -31,6 +31,7 @@ void vectorAddition(int *vectorA, int *vectorB, int *vectorC, int length, int si
   struct dim3 DimGrid((length - 1)/blockSize + 1, 1, 1);
   struct dim3 DimBlock(blockSize, 1, 1);
   cudaVectorAddition<<<DimGrid, DimBlock>>>(dVectorA, dVectorB, dVectorC, length);
+  cudaThreadSynchronize();
 
   //copy result data back to host memory
   cudaMemcpy(vectorC, dVectorC, size, cudaMemcpyDeviceToHost);
