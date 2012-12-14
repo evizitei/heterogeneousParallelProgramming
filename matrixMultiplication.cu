@@ -4,6 +4,8 @@
 #include <cuda_runtime.h>
 
 #define TILE_WIDTH 2
+#define INPUT_CONSTANT 7
+#define BLOCK_SIZE 3
 
 
 __host__
@@ -13,7 +15,7 @@ float *allocateMatrix(int rows, int columns){
 
 __host__
 void initializeMatrix(int rows, int columns, float *matrix){
-  float constantMultiplicant = 7;
+  float constantMultiplicant = INPUT_CONSTANT;
   int index;
 
   for(index = 0; index < (rows * columns); ++index){
@@ -45,10 +47,8 @@ void cudaMatrixMultiply(float *mA, float *mB, float *mC, int aRows, int aCols, i
   //currently untiled, trying to get the basics to work.
   int row = blockIdx.y * blockDim.y + threadIdx.y; /* row of matrix A to consider for this thread */
   int column = blockIdx.x * blockDim.x + threadIdx.x; /* column of matrix B to consider for this thread */
-  //printf("about to run row %d and column %d AGAINST BOUNDARIES: %d, %d\n", row, column, aRows, bCols);
 
   if(row < aRows && column < bCols){
-    //printf("checked up on row %d and column %d\n", row, column);
     float resultValue = 0;
     int k;
 
@@ -58,7 +58,6 @@ void cudaMatrixMultiply(float *mA, float *mB, float *mC, int aRows, int aCols, i
       resultValue += (aValue * bValue);
     }
 
-    //printf("calculated value for %d, %d as %f", row, column, resultValue);
     mC[(row * bCols) + column] = resultValue;
   }
 }
@@ -84,14 +83,13 @@ void multiplyMatrices(float *mA, float *mB, float *mC, int aRows, int aCols, int
   cudaMemcpy(gpuMatrixB, mB, bSize, cudaMemcpyHostToDevice);
 
   //initialize kernal dimensions
-  int blockSize = 3;
-  struct dim3 threadsPerBlock(blockSize, blockSize, 1); // 16 * 16 = 256 threads per block
+  struct dim3 threadsPerBlock(BLOCK_SIZE, BLOCK_SIZE, 1); // 16 * 16 = 256 threads per block
   struct dim3 numberOfBlocks(bCols/threadsPerBlock.x + 1, aRows/threadsPerBlock.y + 1, 1); //need enough blocks to cover the full result matrix
 
   //delegate matrix manipulation to GPU
 
   //naiveMatrixMultiply(mA, mB, mC, aRows, aCols, bRows, bCols);
-  cudaMatrixMultiply<<<numberOfBlocks, threadsPerBlock>>>(mA, mB, mC, aRows, aCols, bRows, bCols);
+  cudaMatrixMultiply<<<numberOfBlocks, threadsPerBlock>>>(gpuMatrixA, gpuMatrixB, gpuMatrixC, aRows, aCols, bRows, bCols);
   cudaThreadSynchronize(); // here we wait until all threads are finished
 
   //copy result back to host memory
