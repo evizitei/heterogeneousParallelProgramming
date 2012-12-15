@@ -4,8 +4,8 @@
 #include <cuda_runtime.h>
 
 #define TILE_WIDTH 2
-#define INPUT_CONSTANT 7
-#define BLOCK_SIZE 3
+#define INPUT_CONSTANT 1.5
+#define BLOCK_SIZE 2
 
 
 __host__
@@ -44,13 +44,42 @@ void naiveMatrixMultiply(float *mA, float *mB, float *mC, int aRows, int aCols, 
 
 __global__
 void cudaMatrixMultiply(float *mA, float *mB, float *mC, int aRows, int aCols, int bRows, int bCols){
-  //currently untiled, trying to get the basics to work.
+  __shared__ float aTile[TILE_WIDTH][TILE_WIDTH];
+  __shared__ float bTile[TILE_WIDTH][TILE_WIDTH];
+
   int row = blockIdx.y * blockDim.y + threadIdx.y; /* row of matrix A to consider for this thread */
   int column = blockIdx.x * blockDim.x + threadIdx.x; /* column of matrix B to consider for this thread */
 
   if(row < aRows && column < bCols){
+    int tile_index;
+    float resultValue = 0;
+
+    for(tile_index = 0; tile_index < (aCols/TILE_WIDTH + 1); ++tile_index){
+      /*load tiles into shared memory*/
+      aTile[threadIdx.y][threadIdx.x] = mA[(row * aCols) + (tile_index * TILE_WIDTH) + threadIdx.x];
+      bTile[threadIdx.y][threadIdx.x] = mB[(bCols * ((tile_index * TILE_WIDTH) + threadIdx.y)) + column];
+      /* wait for all data loads to finish */
+      __syncthreads();
+      /* calculate additions to accumulator value within this tile */
+      int intraTileIndex;
+      for(intraTileIndex = 0; intraTileIndex < TILE_WIDTH; ++intraTileIndex){
+        float incrementValue = (aTile[threadIdx.y][intraTileIndex] * bTile[intraTileIndex][threadIdx.x]);
+        if(incrementValue != NAN){
+          resultValue += incrementValue;
+        }
+      }
+      /* wait for all calculations on current tile to complete */
+      __syncthreads();
+    }
+
+    mC[(row * bCols) + column] = resultValue;
+  }
+
+/* OLD UNTILED VERSION
+  if(row < aRows && column < bCols){
     float resultValue = 0;
     int k;
+
 
     for(k = 0; k < aCols; k++){
       float aValue = mA[(row * aCols) + k];
@@ -60,6 +89,8 @@ void cudaMatrixMultiply(float *mA, float *mB, float *mC, int aRows, int aCols, i
 
     mC[(row * bCols) + column] = resultValue;
   }
+*/
+
 }
 
 __host__
@@ -124,10 +155,10 @@ int main(int argc, char **argv){
   float *resultMatrix;
 
   //setup matrix dimensions
-  int baseRows = 3;
-  int baseColumns = 3;
+  int baseRows = 10;
+  int baseColumns = 10;
   int modulationRows = baseColumns; // in order for this function to be defined, the column count from A must be equal to the row count of B
-  int modulationColumns = 3;
+  int modulationColumns = 10;
   int resultRows = baseRows;
   int resultColumns = modulationColumns;
 
@@ -143,8 +174,8 @@ int main(int argc, char **argv){
   multiplyMatrices(baseMatrix, modulationMatrix, resultMatrix, baseRows, baseColumns, modulationRows, modulationColumns);
 
   //output results of the calculation
-  printMatrix(baseMatrix, baseRows, baseColumns);
-  printMatrix(modulationMatrix, modulationRows, modulationColumns);
+  //printMatrix(baseMatrix, baseRows, baseColumns);
+  //printMatrix(modulationMatrix, modulationRows, modulationColumns);
   printMatrix(resultMatrix, baseRows, modulationColumns);
 
   //free host memory
